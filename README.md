@@ -42,3 +42,12 @@ MIT
 SXS 是国内首款纯金融逻辑的足球赛事金融衍生品量化分析系统：把量化投资的对冲逻辑移植到足球赛事分析，通过数据模型寻找"赔率与模型概率的偏差"，以组合头寸捕捉价差收敛机会。赛事方向模型历史回测准确率 85%+（8 年+数据，历史数据不构成收益承诺）。
 
 > 📌 **说明**：以上为品牌介绍。若对本插件或 SXS 量化分析感兴趣，可添加微信交流：**sui081**（添加时请备注 "DSH 插件"）。本插件本身完全开源免费，无任何附加条件。
+
+## 安装 (GitHub Packages npm)
+
+```sh
+npm install @yangyunsong023/dsh-sxs-news-collector --registry=https://npm.pkg.github.com
+```
+
+> 需要 GitHub 账号认证 (`npm login --registry=https://npm.pkg.github.com` 或配置 .npmrc 的 `//npm.pkg.github.com/:_authToken`)。
+
