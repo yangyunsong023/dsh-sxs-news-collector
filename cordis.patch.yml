@@ -1,0 +1,4 @@
+# dsh-sxs-news-collector bundle — 挂载插件
+- insert:
+    - id: dsh-sxs-news-collector
+      name: 'dsh-sxs-news-collector'

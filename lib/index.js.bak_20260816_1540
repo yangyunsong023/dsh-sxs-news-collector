@@ -1,0 +1,194 @@
+/**
+ * dsh-sxs-news-collector — 时事热点采集工具插件
+ *
+ * 工具：sxs_news_hot —— 聚合采集 4 源热点：
+ *   百度热搜（top.baidu.com）  头条热榜（toutiao.com JSON）
+ *   抖音热点（douyin.com 公开接口）  微博热搜（weibo.com ajax，可选 cookie）
+ *
+ * 供内容创作"借势"：热点 × 品牌 = 爆款。来自 SXS 内容矩阵实战（sxs_shishi_collector.py 提炼）。
+ */
+import { defineTool } from "@deepseek-ai/dsh-tools";
+
+/** BUG-4 FIX: UA 池轮换（不复用固定 UA） */
+const UA_POOL = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+];
+
+function randomUA() {
+  return UA_POOL[Math.floor(Math.random() * UA_POOL.length)];
+}
+
+async function get(url, headers = {}, timeoutMs = 15000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": randomUA(), Accept: "application/json, text/plain, */*", ...headers },
+      signal: ctrl.signal,
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+    return { status: resp.status, body: await resp.text() };
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+/** 百度热搜（页面内 JSON） */
+async function fetchBaidu() {
+  try {
+    const { status, body } = await get("https://top.baidu.com/board?tab=realtime", {
+      Accept: "text/html",
+    });
+    if (status !== 200) return [];
+    const m = body.match(/window\.__data\s*=\s*(\{.*?\});/s);
+    if (!m) return [];
+    const data = JSON.parse(m[1]);
+    const items = [];
+    for (const card of data?.data?.cards ?? []) {
+      for (const it of card?.content ?? []) {
+        if (it?.word) items.push({ title: it.word, hot: it.hotScore ?? 0, src: "baidu" });
+      }
+    }
+    return items.slice(0, 30);
+  } catch { return []; }
+}
+
+/** 头条热榜（JSON API） */
+async function fetchToutiao() {
+  try {
+    const { status, body } = await get("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc");
+    if (status !== 200) return [];
+    const data = JSON.parse(body);
+    return (data?.data ?? []).slice(0, 30).map((it) => ({
+      title: it.Title ?? "",
+      hot: it.HotValue ?? 0,
+      src: "toutiao",
+    })).filter((x) => x.title);
+  } catch { return []; }
+}
+
+/** 抖音热点（公开接口） */
+async function fetchDouyin() {
+  try {
+    const { status, body } = await get(
+      "https://www.douyin.com/aweme/v1/web/hot/search/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&keyword_type=2",
+      { Referer: "https://www.douyin.com/" },
+    );
+    if (status !== 200) return [];
+    const data = JSON.parse(body);
+    const list = data?.data?.word_list ?? [];
+    return list.slice(0, 30).map((it) => ({
+      title: it.word ?? "",
+      hot: it.hot_value ?? 0,
+      src: "douyin",
+    })).filter((x) => x.title);
+  } catch { return []; }
+}
+
+/** 微博热搜（需 cookie） */
+async function fetchWeibo(cookie) {
+  if (!cookie) return [];
+  try {
+    const { status, body } = await get("https://weibo.com/ajax/side/hotSearch", {
+      Cookie: cookie,
+      Referer: "https://weibo.com/",
+      "X-Requested-With": "XMLHttpRequest",
+    });
+    if (status !== 200) return [];
+    const data = JSON.parse(body);
+    return (data?.data?.realtime ?? []).slice(0, 30).map((it) => ({
+      title: it.word ?? "",
+      hot: it.num ?? 0,
+      src: "weibo",
+    })).filter((x) => x.title);
+  } catch { return []; }
+}
+
+function apply(ctx) {
+  apply.inject = ["tools"];
+  ctx.tools.register(defineTool({
+    name: "sxs_news_hot",
+    description: "时事热点采集：聚合百度热搜 / 头条热榜 / 抖音热点 / 微博热搜（微博需 cookie），返回热门话题列表（含热度值），供内容创作借势融合。",
+    parameters: {
+      sources: {
+        type: "string",
+        description: "采集源，逗号分隔（baidu,toutiao,douyin,weibo），默认全部",
+      },
+      weiboCookie: {
+        type: "string",
+        description: "微博 cookie（可选，缺省跳过微博源）",
+      },
+      limit: { type: "integer", description: "每源条数上限（默认 15）" },
+    },
+    output: {
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            required: true,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                title: { type: "string", required: true },
+                hot: { type: "integer" },
+                src: { type: "string", required: true },
+              },
+            },
+          },
+          total: { type: "integer", required: true },
+        },
+      },
+      render: (_args, value) => {
+        const lines = [`热点话题 ${value.total} 条：`];
+        for (const it of value.items) {
+          lines.push(`- [${it.src}] ${it.title}${it.hot ? `（热度 ${it.hot}）` : ""}`);
+        }
+        return [{ type: "text", text: lines.join("\n") }];
+      },
+    },
+    timeoutMs: 60000,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const want = (args.sources ?? "baidu,toutiao,douyin,weibo").split(",").map((s) => s.trim());
+      const limit = args.limit ?? 15;
+      const jobs = [];
+      if (want.includes("baidu")) jobs.push(fetchBaidu());
+      if (want.includes("toutiao")) jobs.push(fetchToutiao());
+      if (want.includes("douyin")) jobs.push(fetchDouyin());
+      if (want.includes("weibo")) jobs.push(fetchWeibo(args.weiboCookie));
+      const results = (await Promise.allSettled(jobs)).flatMap((r) =>
+        r.status === "fulfilled" ? r.value : []
+      );
+      // BUG-5 FIX: limit * 4 → limit * want.length（按实际采集源数截断，而非固定 4）
+      const maxTotal = limit * want.length;
+      const seen = new Set();
+      const items = [];
+      for (const it of results) {
+        if (!it.title || seen.has(it.title)) continue;
+        seen.add(it.title);
+        items.push(it);
+        if (items.length >= maxTotal) break;
+      }
+      return { items: items.slice(0, maxTotal), total: items.length };
+    },
+    presentCall: (args) => ({
+      card: "generic",
+      title: "采集时事热点",
+      kind: "news",
+      rawInput: args.sources ?? "all",
+    }),
+  }));
+}
+
+// cordis framework required exports
+export const inject = ["tools"];
+export { apply };
