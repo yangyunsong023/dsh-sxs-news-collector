@@ -1,0 +1,56 @@
+# ============================================================
+# SXS PR-Agent 项目级配置
+# 先生 2026-08-31 18:20 CST 拍板
+# 阿牛 CEO 自维护
+# ============================================================
+
+[pr_reviewer]
+# 严格审查模式 · v2.5.78 战略级永久
+enable_review_comments = true
+persistent_comments = true
+max_suggestions = 5
+severity = "high"
+
+[github]
+# 自动触发 slash commands
+auto_review = true
+auto_describe = true
+auto_improve = true
+auto_update_changelog = true
+commands = [
+    "review",
+    "describe",
+    "improve",
+    "ask",
+    "update_changelog",
+    "help_docs",
+]
+
+[checks]
+enabled = true
+
+# ===== SXS 5 角色铁律集成 =====
+[sxs_custom]
+# 先生 = SXS 创始人
+founder_title = "先生"
+
+# 5 角色精简版
+agents = ["阿牛", "规哥", "财神", "大牛", "阿永"]
+
+# 称呼铁律：严禁「老板」
+forbidden_titles = ["老板", "boss", "Boss"]
+
+# 路径查询 SOP：必须实测（v2.5.75）
+path_query_must_empirical = true
+
+# 数据真实性铁律：严禁 AI 幻觉（v2.5.50）
+no_ai_hallucination = true
+
+# 三件套保护：IDENTITY/USER/HEARTBEAT 禁止自动改
+protected_files = ["IDENTITY.md", "USER.md", "HEARTBEAT.md"]
+
+# Skill 4 件套 SOP（v2.5.72）
+skill_4_pieces = ["SKILL.md", "scripts/", "examples/", "DELIVERY.json"]
+
+# 心跳纯净铁律（v2.5.83）
+heartbeat_purity = true
