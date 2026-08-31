@@ -1,0 +1,102 @@
+# ============================================================
+# SXS Qodo PR-Agent · GitHub Actions 配置
+# 先生 2026-08-31 18:20 CST 拍板 · 三件套铁三角 #3
+# Apache 2.0 · 阿牛 CEO 自维护
+# MiniMax LLM 后端（$0 成本 · SXS 量化代码不出内网）
+# ============================================================
+name: SXS PR-Agent (AI 智能审核)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
+
+jobs:
+  pr_agent_job:
+    # 仅当 PR 非 draft + 评论以 / 开头（slash command）触发
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Qodo PR-Agent (MiniMax LLM)
+        uses: The-PR-Agent/pr-agent@main
+        env:
+          # ===== MiniMax LLM 配置（先生已有 token · $0 调用）=====
+          # provider = openai 兼容模式（MiniMax 兼容 OpenAI 接口）
+          OPENAI_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          OPENAI_API_BASE: "https://api.minimax.chat/v1"
+          OPENAI_ORG: "minimax"
+          # 配置模型（MiniMax-M3 / M2.7 / Flash 任选）
+          CONFIG__MODEL: "minimax/MiniMax-M3"
+          # 备选模型
+          CONFIG__FALLBACK_MODELS: "minimax/MiniMax-M2.7-highspeed,minimax/MiniMax-M2.7"
+
+          # ===== GitHub token =====
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # ===== 启用 slash commands =====
+          CONFIG__GITHUB__COMMANDS__HELP_DOCS: "true"
+          CONFIG__GITHUB__COMMANDS__REVIEW: "true"
+          CONFIG__GITHUB__COMMANDS__DESCRIBE: "true"
+          CONFIG__GITHUB__COMMANDS__IMPROVE: "true"
+          CONFIG__GITHUB__COMMANDS__ASK: "true"
+          CONFIG__GITHUB__COMMANDS__UPDATE_CHANGELOG: "true"
+
+          # ===== 自动审核配置（先生战略级）=====
+          # 新 PR 自动跑：/review + /describe + /improve
+          CONFIG__GITHUB__AUTO_REVIEW__ENABLED: "true"
+          CONFIG__GITHUB__AUTO_DESCRIBE__ENABLED: "true"
+          CONFIG__GITHUB__AUTO_IMPROVE__ENABLED: "true"
+
+          # ===== SXS 自定义规则 · v2.5.78 铁律集成 =====
+          # 严格审查模式（防止 P0 偏差漏过）
+          CONFIG__REVIEW__REVIEWER__SEVERITY: "high"
+          CONFIG__REVIEW__REVIEWER__PERSISTENT_COMMENTS: "true"
+          CONFIG__REVIEW__REVIEWER__SUGGESTIONS__MAX_SUGGESTIONS: 5
+
+          # ===== 数据隐私 · 0 训练（先生合规要求）=====
+          CONFIG__PR_REVIEWER__LEARN_FROM_FEEDBACK: "false"
+
+          # ===== 输出到 GitHub Checks =====
+          CONFIG__GITHUB__CHECKS__ENABLED: "true"
+
+      - name: Run Semgrep SXS 铁律（在 PR 上同步执行）
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            .semgrep/sxs-iron-rules.yml
+            p/python
+            p/security-audit
+            p/secrets
+            p/sql-injection
+            p/owasp-top-ten
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: true
+
+  sxs_semgrep_baseline:
+    # 每天 00:00 跑全仓 Semgrep 扫描 → 生成报告
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            .semgrep/sxs-iron-rules.yml
+            p/security-audit
+            p/secrets
